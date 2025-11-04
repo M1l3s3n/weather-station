@@ -1,27 +1,22 @@
-import express from "express";
-import SensorData from "../models/SensorData.js";
-
+const express = require("express");
 const router = express.Router();
+const {
+  saveSensorData,
+  getLatestData,
+  getHistory,
+  getStats,
+} = require("../controllers/sensorController");
 
-// Отримати всі дані
-router.get("/", async (req, res) => {
-  try {
-    const data = await SensorData.find().sort({ createdAt: -1 }).limit(100);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// POST /api/sensor - від ESP32
+router.post("/sensor", saveSensorData);
 
-// ESP32 відправляє POST з даними датчиків
-router.post("/", async (req, res) => {
-  try {
-    const sensorData = new SensorData(req.body);
-    await sensorData.save();
-    res.status(201).json({ message: "Data saved successfully" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+// GET /api/latest - останні дані
+router.get("/latest", getLatestData);
 
-export default router;
+// GET /api/history - за 24 години
+router.get("/history", getHistory);
+
+// GET /api/stats - статистика
+router.get("/stats", getStats);
+
+module.exports = router;
