@@ -6,22 +6,17 @@ const connectDB = require("./config/db");
 const apiRoutes = require("./routes/api");
 const errorHandler = require("./middleware/errorHandler");
 
-// Налаштування
 dotenv.config();
 const app = express();
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-// Підключення до MongoDB
-connectDB();
+// connectDB();
 
-// Routes
 app.use("/api", apiRoutes);
 
-// Health check
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -32,7 +27,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
@@ -40,13 +34,15 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
 app.use(errorHandler);
 
-// Запуск сервера
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`
+const start = async () => {
+  try {
+    await connectDB();
+
+    const server = app.listen(PORT, () => {
+      console.log(`
 ╔════════════════════════════════════════╗
 ║  🚀 МЕТЕОСТАНЦІЯ API ЗАПУЩЕНА          ║
 ║  📍 http://localhost:${PORT}              ║
@@ -58,5 +54,34 @@ app.listen(PORT, () => {
 ║  📉 GET /api/stats                     ║
 ║  ❤️  GET /health                        ║
 ╚════════════════════════════════════════╝
-  `);
-});
+      `);
+    });
+
+    const shutdown = async (signal) => {
+      console.log(`\nОтримано ${signal}. Закриваю сервер...`);
+      server.close(async () => {
+        try {
+          await mongoose.disconnect();
+          console.log("MongoDB відключено");
+          process.exit(0);
+        } catch (err) {
+          console.error("Помилка при відключенні:", err);
+          process.exit(1);
+        }
+      });
+
+      setTimeout(() => {
+        console.error("Примусове завершення");
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+  } catch (err) {
+    console.error("Не вдалося стартувати сервер:", err);
+    process.exit(1);
+  }
+};
+
+start();

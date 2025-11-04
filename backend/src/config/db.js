@@ -3,6 +3,11 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
+if (!process.env.MONGODB_URI) {
+  console.error("MONGODB_URI не налаштовано в .env");
+  process.exit(1);
+}
+
 let connectionAttempts = 0;
 const MAX_ATTEMPTS = 5;
 const RETRY_DELAY = 5000;

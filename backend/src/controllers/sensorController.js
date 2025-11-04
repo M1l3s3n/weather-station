@@ -4,6 +4,33 @@ const saveSensorData = async (req, res) => {
   try {
     console.log("Отримані дані від ESP32: ", req.body);
 
+    const requiredFields = [
+      "temperature",
+      "humidity",
+      "pressure",
+      "co2",
+      "co",
+      "gps",
+    ];
+    for (const f of requiredFields) {
+      if (req.body[f] === undefined) {
+        return res.status(400).json({
+          status: "error",
+          message: `Відсутнє поле: ${f}`,
+        });
+      }
+    }
+    if (
+      !req.body.gps ||
+      req.body.gps.lat === undefined ||
+      req.body.gps.lon === undefined
+    ) {
+      return res.status(400).json({
+        status: "error",
+        message: "Поле gps має містити lat і lon",
+      });
+    }
+
     const newData = new SensorData(req.body);
     await newData.save();
 
