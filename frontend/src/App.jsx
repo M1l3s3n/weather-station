@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { analyzeWeather } from "./utils/weatherUtils";
 import WeatherCard from "./components/WeatherCard";
+import PressureCard from "./components/PressureCard";
 // import AirQualityCard from './components/AirQualityCard'
 // import MapCard from './components/MapCard'
 // import TemperatureChart from './components/TemperatureChart'
@@ -13,6 +14,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [weather, setWeather] = useState(null);
+
+  const pressureData = {
+    pressure: 30.12,
+    history: [29.95, 29.98, 15.01, 30.05, 40.08, 30.1, 30.12, 1.15],
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -70,6 +76,7 @@ export default function App() {
             <div className="basicInfoTemperature">
               {loading ? "..." : data?.temperature}°C
             </div>
+
             <div className="basicInfoDayToday">
               {loading
                 ? "..."
@@ -96,6 +103,7 @@ export default function App() {
       </section>
       <section className="cardsContainer">
         <WeatherCard data={data} loading={loading} />
+        <PressureCard data={pressureData} loading={false} />
       </section>
     </div>
   );
