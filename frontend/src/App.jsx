@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { analyzeWeather } from "./utils/weatherUtils";
 import WeatherCard from "./components/WeatherCard";
 import PressureCard from "./components/PressureCard";
-// import AirQualityCard from './components/AirQualityCard'
-// import MapCard from './components/MapCard'
-// import TemperatureChart from './components/TemperatureChart'
-// import { getLatestData, getHistory } from './services/api'
+import MapCard from "./components/MapCard";
+import useOpenMeteoForecast from "./hooks/useOpenMeteoForecast";
+import HourlyForecast from "./components/HourlyForecast";
 import cloudy from "./assets/icons/cloudy.png";
 import "./App.css";
 
@@ -14,11 +13,38 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [weather, setWeather] = useState(null);
+  const [pressureData, setPressureData] = useState(null);
+  const [mapData, setMapData] = useState(null);
+  const { forecast, loading: forecastLoading } = useOpenMeteoForecast(
+    mapData?.lat,
+    mapData?.lon
+  );
 
-  const pressureData = {
-    pressure: 30.12,
-    history: [29.95, 29.98, 15.01, 30.05, 40.08, 30.1, 30.12, 1.15],
-  };
+  useEffect(() => {
+    const fetchPressure = async () => {
+      try {
+        const res = await fetch("http://localhost:3000/api/pressureHourly");
+        if (!res.ok) throw new Error("Помилка підключення тиску");
+        const json = await res.json();
+
+        const dataForCard = {
+          pressure: json.data[json.data.length - 1]?.pressure || 0,
+          history: json.data.map((item) => item.pressure),
+        };
+
+        setPressureData(dataForCard);
+      } catch (err) {
+        console.error("Помилка при завантаженні тиску:", err);
+        setPressureData(null);
+      }
+    };
+
+    fetchPressure();
+
+    const interval = setInterval(fetchPressure, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,6 +58,7 @@ export default function App() {
         console.log(json); //!не забути видалити
 
         setData(json);
+        setMapData({ lat: json.gps.lat, lon: json.gps.lon });
 
         const weatherData = analyzeWeather(
           json.temperature,
@@ -51,13 +78,9 @@ export default function App() {
 
     fetchData();
 
-    const interval = setInterval(fetchData, 500000);
+    const interval = setInterval(fetchData, 60000);
 
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -103,7 +126,15 @@ export default function App() {
       </section>
       <section className="cardsContainer">
         <WeatherCard data={data} loading={loading} />
-        <PressureCard data={pressureData} loading={false} />
+        <PressureCard
+          data={pressureData || { pressure: 0, history: [] }}
+          loading={!pressureData}
+        />
+        <MapCard
+          data={mapData || { lat: 49.84, lon: 24.03 }}
+          loading={loading}
+        />
+        <HourlyForecast data={forecast} loading={forecastLoading} />
       </section>
     </div>
   );

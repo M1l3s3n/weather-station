@@ -113,4 +113,6 @@ body {
   flex: 1;
   background-color: #4d445794;
   display: flex;
+  flex-wrap: wrap;
+  gap: 1.5%;
 }
