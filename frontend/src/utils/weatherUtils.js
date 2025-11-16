@@ -1,82 +1,79 @@
-import sunny from "../assets/icons/sunny.png";
-import rainy from "../assets/icons/rainy.png";
-import hot from "../assets/icons/hot.png";
-// import storm from "../assets/icons/storm.png";
-import foggy from "../assets/icons/foggy.png";
-// import night from "../assets/icons/night.png";
-import snowy from "../assets/icons/snowy.png";
-import severeStorm from "../assets/icons/severe-storm.png";
+import sunny from "../assets/icons/sunny.webp";
+import rainy from "../assets/icons/rainy.webp";
+import hot from "../assets/icons/hot.webp";
+import foggy from "../assets/icons/foggy.webp";
+import snowy from "../assets/icons/snowy.webp";
+import severeStorm from "../assets/icons/severe-storm.webp";
 
-// ! ОСНОВНА ФУНКЦІЯ
+export const analyzeWeather = (temp, humidity, rain, pressure, windSpeed) => {
+  let icon, status, background;
 
-export const analyzeWeather = (temp, humidity, rain) => {
-  let weatherType;
-  let icon;
-  let status;
-  let background;
-
-  // ГРОЗА З ДОЩЕМ + гарячо
-  if (rain && temp > 20) {
-    weatherType = "severe-storm";
+  // 1. ГРОЗА (дощ + вітер + високий тиск)
+  if (rain && windSpeed > 15 && pressure > 1015) {
     icon = severeStorm;
-    status = "Грозовий дощ";
-    background = "/images/severe-storm.png";
+    status = "Гроза";
+    background = "/images/storm.webp";
   }
-  // ДОЩ зі снігом
-  else if (rain && temp < 5) {
-    weatherType = "snowy-rain";
-    icon = snowy;
-    status = "Сніг з дощем";
-    background = "/images/snow.png";
+  // 2. СИЛЬНИЙ ДОЩ (дощ + тепло)
+  else if (rain && temp > 15) {
+    icon = rainy;
+    status = "Злива";
+    background = "/images/heavy-rainy.webp";
   }
-  // ПРОСТО ДОЩ
+  // 3. ЛЕГКИЙ ДОЩ
   else if (rain) {
-    weatherType = "rainy";
     icon = rainy;
     status = "Дощ";
-    background = "/images/rainy.png";
+    background = "/images/light-rain.webp";
   }
-  // ХОЛОДНО - СНІГ
+  // 4. СНІГОПАД (холод + вологість)
+  else if (temp < 0 && humidity > 75) {
+    icon = snowy;
+    status = "Снігопад";
+    background = "/images/snowfall.webp";
+  }
+  // 5. СНІГ
   else if (temp < 0) {
-    weatherType = "snowy";
     icon = snowy;
     status = "Сніг";
-    background = "/images/snow.png";
+    background = "/images/snow.webp";
   }
-  // ДУЖЕ ЖАРКО - СПЕКА
+  // 6. МОРОЗ (дуже холодно)
+  else if (temp < -10) {
+    icon = snowy;
+    status = "Мороз";
+    background = "/images/frost.webp";
+  }
+  // 7. СПЕКА (жара + CO2)
   else if (temp > 30) {
-    weatherType = "hot";
     icon = hot;
     status = "Спека";
-    background = "/images/hot.png";
+    background = "/images/hot.webp";
   }
-  // ВОЛОГО - ТУМАН
-  else if (humidity > 80) {
-    weatherType = "foggy";
+  // 8. ТУМАН (вологість + низький вітер)
+  else if (humidity > 90 && windSpeed < 5) {
     icon = foggy;
     status = "Туман";
-    background = "/images/foggy.png";
+    background = "/images/foggy.webp";
   }
-  // ГАРЯЧО - СОНЦЕ
-  else if (temp > 20) {
-    weatherType = "sunny";
+  // 9. ПОХМУРО (середня температура + вологість)
+  else if (temp > 5 && temp <= 18 && humidity > 65) {
+    icon = sunny;
+    status = "Похмуро";
+    background = "/images/overcast.webp";
+  }
+  // 10. ЧАСТКОВО ХМАРНО
+  else if (temp > 18 && humidity > 50) {
+    icon = sunny;
+    status = "Мінлива хмарність";
+    background = "/images/partly-cloudy.webp";
+  }
+  // 11. СОНЯЧНО (за замовчуванням)
+  else {
     icon = sunny;
     status = "Сонячно";
-    background = "/images/sunny.png";
-  }
-  // НІЧ
-  else {
-    weatherType = "night";
-    icon = night;
-    status = "Ніч";
-    background = "/images/night.png";
+    background = "/images/sunny.webp";
   }
 
-  // * Повертаємо ВСЕ необхідне
-  return {
-    weatherType,
-    icon,
-    status,
-    background,
-  };
+  return { icon, status, background };
 };

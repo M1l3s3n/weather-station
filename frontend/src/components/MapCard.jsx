@@ -1,21 +1,17 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./cardsStyles.css";
 
-// ЧЕРВОНА ІКОНКА
 const redIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
   iconRetinaUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
-  shadowSize: [41, 41],
 });
 
 function MapResize({ center }) {
@@ -27,8 +23,9 @@ function MapResize({ center }) {
 }
 
 export default function MapCard({ data, loading }) {
-  const [address, setAddress] = useState("Завантаження адреси...");
+  const [address, setAddress] = useState("");
   const [coordsStr, setCoordsStr] = useState("");
+  const abortControllerRef = useRef(null);
 
   const lat = data?.lat ?? null;
   const lon = data?.lon ?? null;
@@ -38,7 +35,7 @@ export default function MapCard({ data, loading }) {
     return [lat, lon];
   }, [lat, lon]);
 
-  // Формат координат
+  // Показуємо координати одразу (синхронно)
   useEffect(() => {
     if (lat == null || lon == null) return;
     const latStr =
@@ -46,30 +43,62 @@ export default function MapCard({ data, loading }) {
     const lonStr =
       lon >= 0 ? `${lon.toFixed(4)}° E` : `${Math.abs(lon).toFixed(4)}° W`;
     setCoordsStr(`${latStr}, ${lonStr}`);
+
+    // Показуємо координати як адресу поки завантажується реальна адреса
+    setAddress(`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
   }, [lat, lon]);
 
-  // Reverse geocoding
+  // Геокодинг адреси — АСИНХРОННО з затримкою (не блокує критичний шлях)
   useEffect(() => {
     if (lat == null || lon == null) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const fetchAddress = async () => {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=uk`,
+          { signal: controller.signal }
         );
-        const json = await res.json();
-        const { road, city, town, village, suburb } = json.address || {};
 
-        const location = city || town || village || "Невідомо";
-        const street = road || suburb || "Невідома вулиця";
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = await res.json();
+
+        if (!json.address || Object.keys(json.address).length === 0) {
+          setAddress("Поза населеним пунктом");
+          return;
+        }
+
+        const { road, house_number, suburb, village, town, city, country } =
+          json.address;
+        const location = city || town || village || country || "Невідомо";
+        const street = road
+          ? `${road}${house_number ? `, ${house_number}` : ""}`
+          : suburb || "вулиця невідома";
 
         setAddress(`${location}, ${street}`);
       } catch (err) {
-        setAddress("Львів, вул. Симона Петлюри");
+        if (err.name !== "AbortError") {
+          console.warn("Geocoding error:", err);
+          // Залишаємо координати як fallback
+        }
       }
     };
 
-    fetchAddress();
+    // Затримка 800мс перед запитом до Nominatim (не блокує LCP!)
+    const timer = setTimeout(() => {
+      fetchAddress();
+    }, 800);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [lat, lon]);
 
   const mapKey =
@@ -99,29 +128,19 @@ export default function MapCard({ data, loading }) {
           attributionControl={false}
           style={{ height: "100%", width: "100%" }}
           className="leafletMap"
-          onWheel={(e) => {
-            if (e.ctrlKey) {
-              e.preventDefault();
-            }
-          }}
         >
-          {/* ЯСКРАВА КАРТА — ВСЕ ВИДИМО */}
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           />
-
-          {/* ДОДАТКОВО: ЯСКРАВІ КОЛЬОРИ (парки, вода, дороги) */}
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://carto.com/">CARTO</a>'
             opacity={0.8}
           />
-
           <Marker position={center} icon={redIcon}>
             <Popup>{address}</Popup>
           </Marker>
-
           <MapResize center={center} />
         </MapContainer>
       </div>

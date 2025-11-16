@@ -1,141 +1,208 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { analyzeWeather } from "./utils/weatherUtils";
+import { formatUkrainianDate } from "./utils/dateUtils";
 import WeatherCard from "./components/WeatherCard";
 import PressureCard from "./components/PressureCard";
 import MapCard from "./components/MapCard";
 import useOpenMeteoForecast from "./hooks/useOpenMeteoForecast";
 import HourlyForecast from "./components/HourlyForecast";
-import cloudy from "./assets/icons/cloudy.png";
+import AirWindCard from "./components/AirWindCard";
+import WeatherPreloader from "./components/WeatherPreloader";
 import "./App.css";
+
+const API_BASE = `${window.location.origin}/api`;
 
 export default function App() {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [weather, setWeather] = useState(null);
+  const [meteoData, setMeteoData] = useState(null);
   const [pressureData, setPressureData] = useState(null);
   const [mapData, setMapData] = useState(null);
+
+  const [loadingLatest, setLoadingLatest] = useState(true);
+  const [loadingPressure, setLoadingPressure] = useState(true);
+  const [loadingMeteo, setLoadingMeteo] = useState(true);
+  const [error, setError] = useState(null);
+
   const { forecast, loading: forecastLoading } = useOpenMeteoForecast(
     mapData?.lat,
     mapData?.lon
   );
 
+  // === ЗАВАНТАЖЕННЯ ОСНОВНИХ ДАНИХ ===
   useEffect(() => {
-    const fetchPressure = async () => {
+    const fetchLatest = async () => {
       try {
-        const res = await fetch("http://localhost:3000/api/pressureHourly");
-        if (!res.ok) throw new Error("Помилка підключення тиску");
+        const res = await fetch(`${API_BASE}/latest`);
+        if (!res.ok) throw new Error("Сервер недоступний");
         const json = await res.json();
-
-        const dataForCard = {
-          pressure: json.data[json.data.length - 1]?.pressure || 0,
-          history: json.data.map((item) => item.pressure),
-        };
-
-        setPressureData(dataForCard);
-      } catch (err) {
-        console.error("Помилка при завантаженні тиску:", err);
-        setPressureData(null);
-      }
-    };
-
-    fetchPressure();
-
-    const interval = setInterval(fetchPressure, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch("http://localhost:3000/api/latest"); //! внести в змінну юрл і ендпоінт
-
-        if (!res.ok) throw new Error("Помилка підключення");
-
-        const json = await res.json();
-
-        console.log(json); //!не забути видалити
 
         setData(json);
         setMapData({ lat: json.gps.lat, lon: json.gps.lon });
-
-        const weatherData = analyzeWeather(
-          json.temperature,
-          json.humidity,
-          json.rain
-        );
-        setWeather(weatherData);
-
-        setError(null);
       } catch (err) {
-        console.error("Помилка:", err);
-        setError("Не вдалось підключитись до сервера");
+        setError(err.message);
       } finally {
-        setLoading(false);
+        setLoadingLatest(false);
       }
     };
 
-    fetchData();
+    const fetchPressure = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/pressureHourly`);
+        if (!res.ok) throw new Error("Тиск недоступний");
+        const json = await res.json();
+        const pressure = json.data[json.data.length - 1]?.pressure || 0;
+        const history = json.data.map((d) => d.pressure);
 
-    const interval = setInterval(fetchData, 60000);
+        setPressureData({ pressure, history });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingPressure(false);
+      }
+    };
 
-    return () => clearInterval(interval);
+    fetchLatest();
+    fetchPressure();
+
+    const intervalLatest = setInterval(fetchLatest, 60000);
+    const intervalPressure = setInterval(fetchPressure, 60000);
+
+    return () => {
+      clearInterval(intervalLatest);
+      clearInterval(intervalPressure);
+    };
   }, []);
 
-  return (
-    <div
-      className="mainContainer"
-      style={{
-        backgroundImage: `url('${weather?.background}')`,
-      }}
-    >
-      <section className="topContainer">
-        <div className="basicInfo">
-          <div className="basicInfoBox">
-            <div className="basicInfoWeather">
-              {loading ? "Завантаження..." : weather?.status}
-            </div>
-            <div className="basicInfoTemperature">
-              {loading ? "..." : data?.temperature}°C
-            </div>
+  // === МЕТЕО (вітер, UV) ===
+  useEffect(() => {
+    if (!data?.gps?.lat || !data?.gps?.lon) return;
 
-            <div className="basicInfoDayToday">
-              {loading
-                ? "..."
-                : new Date(data?.createdAt).toLocaleDateString("uk-UA", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                  })}
+    const fetchMeteo = async () => {
+      setLoadingMeteo(true);
+      try {
+        const res = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${data.gps.lat}&longitude=${data.gps.lon}&current=uv_index,windspeed_10m`
+        );
+        if (!res.ok) throw new Error("Open-Meteo недоступний");
+        const json = await res.json();
+
+        const windSpeed = json.current?.windspeed_10m?.toFixed(1) || 0;
+        setMeteoData({
+          current: {
+            uv_index: json.current?.uv_index?.toFixed(1) || "0",
+            windspeed_10m: windSpeed,
+          },
+        });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingMeteo(false);
+      }
+    };
+
+    fetchMeteo();
+    const interval = setInterval(fetchMeteo, 600000);
+    return () => clearInterval(interval);
+  }, [data?.gps?.lat, data?.gps?.lon]);
+
+  // === ПОГОДА з useMemo (оптимізація) ===
+  const weather = useMemo(() => {
+    if (!data || !pressureData || !meteoData?.current?.windspeed_10m)
+      return null;
+
+    return analyzeWeather(
+      data.temperature,
+      data.humidity,
+      data.rain,
+      pressureData.pressure,
+      meteoData.current.windspeed_10m
+    );
+  }, [data, pressureData, meteoData]);
+
+  // === ЧЕКАЄМО ВСІХ ДАНИХ ===
+  const isLoading =
+    loadingLatest ||
+    loadingPressure ||
+    loadingMeteo ||
+    forecastLoading ||
+    !data ||
+    !pressureData ||
+    !meteoData ||
+    !forecast;
+
+  // === ПОМИЛКА ===
+  if (error) {
+    return (
+      <WeatherPreloader isLoading={true}>
+        <div style={{ textAlign: "center", color: "#ff6b6b" }}>
+          <h3>Помилка підключення</h3>
+          <p>{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: "1rem",
+              padding: "0.5rem 1rem",
+              background: "#333",
+              color: "#fff",
+              border: "none",
+              borderRadius: "6px",
+            }}
+          >
+            Оновити
+          </button>
+        </div>
+      </WeatherPreloader>
+    );
+  }
+
+  return (
+    <>
+      {/* PRELOADER */}
+      <WeatherPreloader isLoading={isLoading} />
+
+      {/* ОСНОВНИЙ КОНТЕНТ */}
+      {!isLoading && weather && (
+        <div className="mainContainer">
+          <img
+            src={weather?.background}
+            alt="Weather background"
+            className="weather-background"
+            loading="lazy"
+            fetchPriority="low"
+          />
+          <section className="topContainer">
+            <div className="basicInfo">
+              <div className="basicInfoBox">
+                <div className="basicInfoWeather">{weather.status}</div>
+                <div className="basicInfoTemperature">{data.temperature}°C</div>
+                <div className="basicInfoDayToday">
+                  {formatUkrainianDate(data.createdAt)}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="weatherIcon">
-          {loading ? (
-            <div style={{ fontSize: "8rem" }}>⏳</div>
-          ) : (
-            <img
-              src={weather?.icon}
-              alt={weather?.status}
-              className="weatherIconImage"
+            <div className="weatherIcon">
+              <img
+                src={weather.icon}
+                alt={weather.status}
+                className="weatherIconImage"
+                loading="eager"
+                fetchPriority="high"
+              />
+            </div>
+          </section>
+
+          <section className="cardsContainer">
+            <WeatherCard data={data} />
+            <PressureCard data={pressureData} />
+            <MapCard data={mapData} />
+            <HourlyForecast data={forecast} />
+            <AirWindCard
+              espData={{ co: data.co, co2: data.co2 }}
+              meteoData={meteoData}
             />
-          )}
+          </section>
         </div>
-      </section>
-      <section className="cardsContainer">
-        <WeatherCard data={data} loading={loading} />
-        <PressureCard
-          data={pressureData || { pressure: 0, history: [] }}
-          loading={!pressureData}
-        />
-        <MapCard
-          data={mapData || { lat: 49.84, lon: 24.03 }}
-          loading={loading}
-        />
-        <HourlyForecast data={forecast} loading={forecastLoading} />
-      </section>
-    </div>
+      )}
+    </>
   );
 }
