@@ -1,151 +1,113 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+import { getAirQuality } from "../utils/airQuality";
+import { createColoredIcon } from "../utils/createColoredIcon";
 import "leaflet/dist/leaflet.css";
-import "./cardsStyles.css";
 
-const redIcon = new L.Icon({
-  iconUrl:
-    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
   iconRetinaUrl:
-    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
 });
 
-function MapResize({ center }) {
+function ResizeMapOnSidebar({ sidebarOpen }) {
   const map = useMap();
+
   useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 150);
-  }, [center, map]);
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 300);
+  }, [sidebarOpen, map]);
+
   return null;
 }
 
-export default function MapCard({ data, loading }) {
-  const [address, setAddress] = useState("");
-  const [coordsStr, setCoordsStr] = useState("");
-  const abortControllerRef = useRef(null);
-
-  const lat = data?.lat ?? null;
-  const lon = data?.lon ?? null;
-
-  const center = useMemo(() => {
-    if (lat == null || lon == null) return [49.84, 24.03];
-    return [lat, lon];
-  }, [lat, lon]);
-
-  // Показуємо координати одразу (синхронно)
+function FlyTo({ position }) {
+  const map = useMap();
   useEffect(() => {
-    if (lat == null || lon == null) return;
-    const latStr =
-      lat >= 0 ? `${lat.toFixed(4)}° N` : `${Math.abs(lat).toFixed(4)}° S`;
-    const lonStr =
-      lon >= 0 ? `${lon.toFixed(4)}° E` : `${Math.abs(lon).toFixed(4)}° W`;
-    setCoordsStr(`${latStr}, ${lonStr}`);
+    if (position) map.flyTo(position, 16, { duration: 0.8 });
+  }, [position, map]);
+  return null;
+}
 
-    // Показуємо координати як адресу поки завантажується реальна адреса
-    setAddress(`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
-  }, [lat, lon]);
+export default function MapCard({
+  stations,
+  onSelect,
+  sidebarOpen,
+  selectedPosition,
+  loading,
+}) {
+  const wrapperStyle = {
+    width: sidebarOpen ? "calc(100% - 20vw)" : "100%",
+    height: "100vh",
+    transition: "width 300ms ease",
+  };
 
-  // Геокодинг адреси — АСИНХРОННО з затримкою (не блокує критичний шлях)
-  useEffect(() => {
-    if (lat == null || lon == null) return;
+  if (loading) {
+    return (
+      <div className="mapWrapper" style={wrapperStyle}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+          }}
+        >
+          <p>Завантаження карти...</p>
+        </div>
+      </div>
+    );
+  }
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    const fetchAddress = async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=uk`,
-          { signal: controller.signal }
-        );
-
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const json = await res.json();
-
-        if (!json.address || Object.keys(json.address).length === 0) {
-          setAddress("Поза населеним пунктом");
-          return;
-        }
-
-        const { road, house_number, suburb, village, town, city, country } =
-          json.address;
-        const location = city || town || village || country || "Невідомо";
-        const street = road
-          ? `${road}${house_number ? `, ${house_number}` : ""}`
-          : suburb || "вулиця невідома";
-
-        setAddress(`${location}, ${street}`);
-      } catch (err) {
-        if (err.name !== "AbortError") {
-          console.warn("Geocoding error:", err);
-          // Залишаємо координати як fallback
-        }
-      }
-    };
-
-    // Затримка 800мс перед запитом до Nominatim (не блокує LCP!)
-    const timer = setTimeout(() => {
-      fetchAddress();
-    }, 800);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [lat, lon]);
-
-  const mapKey =
-    lat && lon ? `${lat.toFixed(6)}-${lon.toFixed(6)}` : "fallback";
-
-  if (loading) return <div className="map-card">Завантаження...</div>;
-  if (lat == null || lon == null)
-    return <div className="map-card">Немає координат</div>;
+  const center =
+    stations.length > 0
+      ? [stations[0].gps.lat, stations[0].gps.lon]
+      : [49.8397, 24.0297];
 
   return (
-    <div className="map-card">
-      <div className="map-header">
-        <span className="map-address-title">{address}</span>
-      </div>
+    <div className="mapWrapper" style={wrapperStyle}>
+      <MapContainer
+        center={center}
+        zoom={15}
+        zoomControl={false}
+        attributionControl={false}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <TileLayer
+          attribution=""
+          url="https://tile.jawg.io/jawg-matrix/{z}/{x}/{y}{r}.png?access-token=CJ0RsoOXQWWfAcAskbF3tzW5FmMlp2hbbFGTpKyaPfSyAUICAKwCzV0ntLpr4324"
+        />
 
-      <div className="map-container">
-        <MapContainer
-          key={mapKey}
-          center={center}
-          zoom={16}
-          minZoom={12}
-          maxZoom={18}
-          scrollWheelZoom="center"
-          doubleClickZoom={false}
-          dragging={false}
-          zoomControl={false}
-          attributionControl={false}
-          style={{ height: "100%", width: "100%" }}
-          className="leafletMap"
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          />
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-            opacity={0.8}
-          />
-          <Marker position={center} icon={redIcon}>
-            <Popup>{address}</Popup>
-          </Marker>
-          <MapResize center={center} />
-        </MapContainer>
-      </div>
-
-      <div className="map-coords">{coordsStr}</div>
+        {stations.map((s) => {
+          const aq = getAirQuality(s.co2);
+          return (
+            <Marker
+              key={s._id || "main-station"}
+              position={[s.gps.lat, s.gps.lon]}
+              icon={createColoredIcon(aq.color)}
+              eventHandlers={{
+                click: () => onSelect(s),
+              }}
+            >
+              <Popup>
+                <strong>{s.location || "Екостанція"}</strong>
+                <br />
+                CO₂: {s.co2} ppm ({aq.label})
+                <br />
+                Температура: {s.temperature}°C
+              </Popup>
+            </Marker>
+          );
+        })}
+        <ResizeMapOnSidebar sidebarOpen={sidebarOpen} />
+        <FlyTo position={selectedPosition} />
+      </MapContainer>
     </div>
   );
 }
