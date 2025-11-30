@@ -5,6 +5,7 @@ const {
   getLatestData,
   getHistory,
   getStats,
+  getPressureHourly,
 } = require("../controllers/sensorController");
 
 // POST /api/sensor - від ESP32
@@ -18,5 +19,8 @@ router.get("/history", getHistory);
 
 // GET /api/stats - статистика
 router.get("/stats", getStats);
+
+// GET /api/pressureHourly - 8 точок середнього тиску за останні 8 годин
+router.get("/pressureHourly", getPressureHourly);
 
 module.exports = router;
