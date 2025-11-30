@@ -30,24 +30,74 @@ const LVIV_CENTER = {
   longitudeDelta: 0.05,
 };
 
+// 2 фіктивні станції
+const MOCK_DEVICES = [
+  {
+    id: "mock-1",
+    name: "Тестова станція №1",
+    location: "Площа Ринок",
+    latitude: 49.8419,
+    longitude: 24.0315,
+    co2_level: 450,
+    co_level: 12,
+    temperature: 18.7,
+    precipitation: 0, // не падає дощ
+    humidity: 65,
+    pressure: 1012,
+    recorded_at: "2025-11-19T19:00:00Z",
+  },
+  {
+    id: "mock-2",
+    name: "Тестова станція №2",
+    location: "Франківський район",
+    latitude: 49.8245,
+    longitude: 24.0123,
+    co2_level: 720,
+    co_level: 25,
+    temperature: 20.4,
+    precipitation: 1.2, // падає дощ
+    humidity: 72,
+    pressure: 1005,
+    recorded_at: "2025-11-19T19:05:00Z",
+  },
+];
+
 // Функція для визначення якості повітря на основі CO2
 const getAirQualityColor = (co2Level) => {
-  if (!co2Level) return "#8FAEA2";
-  if (co2Level < 400) return "#78FF8A"; // Відмінно
-  if (co2Level < 600) return "#D6F01F"; // Добре
-  if (co2Level < 1000) return "#FFB84D"; // Помірно
+  const value = Number(co2Level);
+  if (Number.isNaN(value)) return "#8FAEA2";
+  if (value < 400) return "#78FF8A"; // Відмінно
+  if (value < 600) return "#D6F01F"; // Добре
+  if (value < 1000) return "#FFB84D"; // Помірно
   return "#FF5C5C"; // Погано
 };
 
 const getAirQualityLabel = (co2Level) => {
-  if (!co2Level) return "Невідомо";
-  if (co2Level < 400) return "Відмінна";
-  if (co2Level < 600) return "Добра";
-  if (co2Level < 1000) return "Помірна";
+  const value = Number(co2Level);
+  if (Number.isNaN(value)) return "Невідомо";
+  if (value < 400) return "Відмінна";
+  if (value < 600) return "Добра";
+  if (value < 1000) return "Помірна";
   return "Погана";
 };
 
-function SensorCard({ icon: Icon, label, value, unit, color = "#8FAEA2" }) {
+// Картка сенсора (з підтримкою valueText)
+function SensorCard({
+  icon: Icon,
+  label,
+  value,
+  unit,
+  color = "#8FAEA2",
+  valueText,
+}) {
+  const numericValue =
+    typeof value === "number" ? value : Number(value);
+
+  const hasValue =
+    numericValue !== null &&
+    numericValue !== undefined &&
+    !Number.isNaN(numericValue);
+
   return (
     <View
       style={{
@@ -83,6 +133,7 @@ function SensorCard({ icon: Icon, label, value, unit, color = "#8FAEA2" }) {
           {label}
         </Text>
       </View>
+
       <View style={{ flexDirection: "row", alignItems: "baseline" }}>
         <Text
           style={{
@@ -92,17 +143,34 @@ function SensorCard({ icon: Icon, label, value, unit, color = "#8FAEA2" }) {
             marginRight: 8,
           }}
         >
-          {value !== null && value !== undefined ? value.toFixed(1) : "—"}
+          {valueText
+            ? valueText
+            : hasValue
+              ? numericValue.toFixed(1)
+              : "—"}
         </Text>
-        <Text
-          style={{
-            color: "#9A9A9A",
-            fontFamily: "Inter_400Regular",
-            fontSize: 16,
-          }}
-        >
-          {unit}
-        </Text>
+        {!valueText && (
+          <Text
+            style={{
+              color: "#9A9A9A",
+              fontFamily: "Inter_400Regular",
+              fontSize: 16,
+            }}
+          >
+            {unit}
+          </Text>
+        )}
+        {valueText && unit ? (
+          <Text
+            style={{
+              color: "#9A9A9A",
+              fontFamily: "Inter_400Regular",
+              fontSize: 16,
+            }}
+          >
+            {unit}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -121,17 +189,32 @@ export default function MapScreen() {
     fetchDevices();
   }, []);
 
+  // 1 реальний + 2 фейкові
   const fetchDevices = async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/devices");
+
       if (!response.ok) {
-        throw new Error("Failed to fetch devices");
+        console.warn("Backend недоступний, використовую тільки мок-дані");
+        setDevices(MOCK_DEVICES);
+        return;
       }
+
       const data = await response.json();
-      setDevices(data.devices || []);
+      const backendDevices = data.devices || [];
+
+      if (backendDevices.length === 0) {
+        console.warn("Backend повернув 0 пристроїв, використовую тільки мок-дані");
+        setDevices(MOCK_DEVICES);
+        return;
+      }
+
+      const realDevice = backendDevices[0];
+      setDevices([realDevice, ...MOCK_DEVICES]);
     } catch (error) {
       console.error("Error fetching devices:", error);
+      setDevices(MOCK_DEVICES);
     } finally {
       setLoading(false);
     }
@@ -142,13 +225,17 @@ export default function MapScreen() {
     setSelectedDevice(device);
     bottomSheetRef.current?.snapToIndex(0);
 
-    // Центруємо карту на вибраному маркері
-    mapRef.current?.animateToRegion({
-      latitude: parseFloat(device.latitude),
-      longitude: parseFloat(device.longitude),
-      latitudeDelta: 0.02,
-      longitudeDelta: 0.02,
-    });
+    const latitude = Number(device.latitude);
+    const longitude = Number(device.longitude);
+
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      mapRef.current?.animateToRegion({
+        latitude,
+        longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      });
+    }
   };
 
   const handleSheetClose = () => {
@@ -173,48 +260,27 @@ export default function MapScreen() {
       >
         {devices.map((device) => {
           const color = getAirQualityColor(device.co2_level);
+          const latitude = Number(device.latitude);
+          const longitude = Number(device.longitude);
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            return null;
+          }
+
           return (
             <Marker
               key={device.id}
-              coordinate={{
-                latitude: parseFloat(device.latitude),
-                longitude: parseFloat(device.longitude),
-              }}
+              coordinate={{ latitude, longitude }}
               onPress={() => handleMarkerPress(device)}
             >
+              {/* ПРОСТИЙ КОЛЬОРОВИЙ КРУГ */}
               <View
                 style={{
-                  alignItems: "center",
-                  justifyContent: "center",
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  backgroundColor: color,
                 }}
-              >
-                {/* Пульсуючий ефект */}
-                <View
-                  style={{
-                    position: "absolute",
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor: color,
-                    opacity: 0.3,
-                  }}
-                />
-                <View
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
-                    backgroundColor: color,
-                    borderWidth: 3,
-                    borderColor: "#FFF",
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 4,
-                    elevation: 5,
-                  }}
-                />
-              </View>
+              />
             </Marker>
           );
         })}
@@ -224,11 +290,11 @@ export default function MapScreen() {
       <View
         style={{
           position: "absolute",
-          top: insets.top,
+          top: 0,
           left: 0,
           right: 0,
           paddingHorizontal: 20,
-          paddingTop: 20,
+          paddingTop: insets.top + 20,
           paddingBottom: 16,
           backgroundColor: "rgba(0, 0, 0, 0.7)",
         }}
@@ -298,36 +364,6 @@ export default function MapScreen() {
         ))}
       </View>
 
-      {/* Кнопка оновлення */}
-      <TouchableOpacity
-        style={{
-          position: "absolute",
-          bottom: 40,
-          right: 20,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: "#D6F01F",
-          alignItems: "center",
-          justifyContent: "center",
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 8,
-        }}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          fetchDevices();
-        }}
-      >
-        {loading ? (
-          <ActivityIndicator color="#000" />
-        ) : (
-          <Activity size={24} color="#000" />
-        )}
-      </TouchableOpacity>
-
       {/* Bottom Sheet з даними датчиків */}
       <BottomSheet
         ref={bottomSheetRef}
@@ -374,7 +410,9 @@ export default function MapScreen() {
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
-                  backgroundColor: `${getAirQualityColor(selectedDevice.co2_level)}20`,
+                  backgroundColor: `${getAirQualityColor(
+                    selectedDevice.co2_level,
+                  )}20`,
                   borderRadius: 8,
                   padding: 12,
                   borderWidth: 1,
@@ -399,7 +437,8 @@ export default function MapScreen() {
                     fontSize: 16,
                   }}
                 >
-                  Якість повітря: {getAirQualityLabel(selectedDevice.co2_level)}
+                  Якість повітря:{" "}
+                  {getAirQualityLabel(selectedDevice.co2_level)}
                 </Text>
               </View>
             </View>
@@ -416,6 +455,7 @@ export default function MapScreen() {
               Показники датчиків
             </Text>
 
+            {/* CO2 */}
             <SensorCard
               icon={Wind}
               label="Вуглекислий газ (CO₂)"
@@ -424,6 +464,7 @@ export default function MapScreen() {
               color={getAirQualityColor(selectedDevice.co2_level)}
             />
 
+            {/* CO */}
             <SensorCard
               icon={AlertCircle}
               label="Чадний газ (CO)"
@@ -432,6 +473,7 @@ export default function MapScreen() {
               color="#FFB84D"
             />
 
+            {/* Температура */}
             <SensorCard
               icon={Thermometer}
               label="Температура"
@@ -440,20 +482,36 @@ export default function MapScreen() {
               color="#8FAEA2"
             />
 
+            {/* Опади: Падає / Не падає дощ */}
             <SensorCard
               icon={Droplets}
               label="Опади"
-              value={selectedDevice.precipitation}
-              unit="мм"
+              value={0}
+              valueText={
+                Number(selectedDevice.precipitation) > 0
+                  ? "Падає дощ"
+                  : "Не падає дощ"
+              }
+              unit=""
               color="#6EB5FF"
             />
 
+            {/* Атмосферний тиск */}
             <SensorCard
               icon={Activity}
-              label="Кислотність (pH)"
-              value={selectedDevice.ph_level}
-              unit="pH"
+              label="Атмосферний тиск"
+              value={selectedDevice.pressure}
+              unit="hPa"
               color="#D6F01F"
+            />
+
+            {/* Вологість */}
+            <SensorCard
+              icon={Droplets}
+              label="Вологість"
+              value={selectedDevice.humidity}
+              unit="%"
+              color="#8FAEA2"
             />
 
             {/* Час оновлення */}
@@ -478,75 +536,108 @@ export default function MapScreen() {
   );
 }
 
-// Темна тема карти
+/**
+ * ОНОВЛЕНИЙ стиль карти:
+ * – дороги м’який зелено-бірюзовий;
+ * – великі написи (Львів, райони) світлі, як на прикладі.
+ */
 const mapStyle = [
-  { elementType: "geometry", stylers: [{ color: "#1a1a1a" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#1a1a1a" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8a8a8a" }] },
+  {
+    elementType: "geometry",
+    stylers: [{ color: "#050608" }],
+  },
+  {
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#708a8b" }], // загалом трохи сірі
+  },
+  {
+    elementType: "labels.text.stroke",
+    stylers: [{ color: "#050608" }],
+  },
+
+  // великі написи – місто / райони
   {
     featureType: "administrative.locality",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#d0d0d0" }],
+    stylers: [{ color: "#f5f9fa" }], // майже білий
+  },
+  {
+    featureType: "administrative.neighborhood",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#e2f3f5" }],
+  },
+
+  // Дороги – м’який зелено-бірюзовий
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#00a86b" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#007a50" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#bff4dd" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#00b97a" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#00865a" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d4ffe8" }],
+  },
+  {
+    featureType: "road.arterial",
+    elementType: "geometry",
+    stylers: [{ color: "#009463" }],
+  },
+  {
+    featureType: "road.local",
+    elementType: "geometry",
+    stylers: [{ color: "#006743" }],
+  },
+
+  // Парки / зелені зони
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#062c26" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4caf50" }],
+  },
+
+  // Інші POI
+  {
+    featureType: "poi",
+    elementType: "geometry",
+    stylers: [{ color: "#111315" }],
   },
   {
     featureType: "poi",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#757575" }],
+    stylers: [{ color: "#6f7f80" }],
   },
-  {
-    featureType: "poi.park",
-    elementType: "geometry",
-    stylers: [{ color: "#1f3a2f" }],
-  },
-  {
-    featureType: "poi.park",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#6b9a76" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#2c2c2c" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#212121" }],
-  },
-  {
-    featureType: "road",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#9a9a9a" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#3c3c3c" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#1f1f1f" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#f3d19c" }],
-  },
-  {
-    featureType: "transit",
-    elementType: "geometry",
-    stylers: [{ color: "#2f2f2f" }],
-  },
-  {
-    featureType: "transit.station",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d0d0d0" }],
-  },
+
+  // Вода
   {
     featureType: "water",
     elementType: "geometry",
-    stylers: [{ color: "#0f2027" }],
+    stylers: [{ color: "#02151a" }],
   },
   {
     featureType: "water",
@@ -556,6 +647,18 @@ const mapStyle = [
   {
     featureType: "water",
     elementType: "labels.text.stroke",
-    stylers: [{ color: "#0f2027" }],
+    stylers: [{ color: "#02151a" }],
+  },
+
+  // Транспорт
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#0b1214" }],
+  },
+  {
+    featureType: "transit.station",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d0d0d0" }],
   },
 ];
