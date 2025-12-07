@@ -3,14 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import BottomSheet, {
-  BottomSheetView,
   BottomSheetScrollView,
 } from "@gorhom/bottom-sheet";
 import {
@@ -29,6 +27,9 @@ const LVIV_CENTER = {
   latitudeDelta: 0.05,
   longitudeDelta: 0.05,
 };
+
+// !!! ПІДСТАВ СВОЮ IP-АДРЕСУ (та, що у тебе в браузері для /api/latest)
+const API_URL = "http://192.168.65.58:3000";
 
 // 2 фіктивні станції
 const MOCK_DEVICES = [
@@ -146,8 +147,8 @@ function SensorCard({
           {valueText
             ? valueText
             : hasValue
-              ? numericValue.toFixed(1)
-              : "—"}
+            ? numericValue.toFixed(1)
+            : "—"}
         </Text>
         {!valueText && (
           <Text
@@ -179,9 +180,12 @@ function SensorCard({
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const fontsLoaded = useAppFonts();
-  const [devices, setDevices] = useState([]);
+
+  // 🚨 За замовчуванням показуємо 2 фіктивні станції
+  const [devices, setDevices] = useState(MOCK_DEVICES);
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+
   const bottomSheetRef = useRef(null);
   const mapRef = useRef(null);
 
@@ -189,31 +193,67 @@ export default function MapScreen() {
     fetchDevices();
   }, []);
 
-  // 1 реальний + 2 фейкові
+  // ⚡️ ТУТ МИ ТЯГНЕМО ОДНУ РЕАЛЬНУ СТАНЦІЮ З /api/latest
   const fetchDevices = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/devices");
+
+      const response = await fetch(`${API_URL}/api/latest`);
 
       if (!response.ok) {
-        console.warn("Backend недоступний, використовую тільки мок-дані");
-        setDevices(MOCK_DEVICES);
-        return;
+        throw new Error("Backend returned error");
       }
 
-      const data = await response.json();
-      const backendDevices = data.devices || [];
+      const raw = await response.json();
+      console.log("RAW /api/latest:", raw);
 
-      if (backendDevices.length === 0) {
-        console.warn("Backend повернув 0 пристроїв, використовую тільки мок-дані");
+      // Багато бекендів віддають { data: {...} }, тому спершу пробуємо raw.data
+      const d = raw.data || raw;
+
+      // ТВОЇ ДАНІ:
+      // {
+      //   temperature: 0,
+      //   humidity: 37,
+      //   pressure: 1017.7,
+      //   rain: false,
+      //   co2: 180,
+      //   co: 1,
+      //   gps: { lat: 49.8353, lon: 23.9952 }
+      // }
+
+      const latitude = Number(
+        d.gps?.lat ?? d.latitude ?? d.lat ?? LVIV_CENTER.latitude
+      );
+      const longitude = Number(
+        d.gps?.lon ?? d.longitude ?? d.lon ?? LVIV_CENTER.longitude
+      );
+
+      const realDevice = {
+        id: d._id ? String(d._id) : "backend-station",
+        name: d.name || "Метеостанція",
+        location: "Львів",
+        latitude,
+        longitude,
+        co2_level: Number(d.co2 ?? d.co2_level ?? 0),
+        co_level: Number(d.co ?? d.co_level ?? 0),
+        temperature: Number(d.temperature ?? d.temp ?? 0),
+        precipitation: Number(
+          d.precipitation ?? d.rain_mm ?? (d.rain ? 1 : 0) ?? 0
+        ),
+        humidity: Number(d.humidity ?? d.hum ?? 0),
+        pressure: Number(d.pressure ?? d.press_hpa ?? 0),
+        recorded_at: d.createdAt || d.timestamp || d.recorded_at || null,
+      };
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        console.warn("Lat/lon from backend invalid, using only MOCK_DEVICES");
         setDevices(MOCK_DEVICES);
-        return;
+      } else {
+        setDevices([realDevice, ...MOCK_DEVICES]);
       }
-
-      const realDevice = backendDevices[0];
-      setDevices([realDevice, ...MOCK_DEVICES]);
     } catch (error) {
-      console.error("Error fetching devices:", error);
+      console.error("Error fetching devices from backend:", error);
+      // якщо бек не працює – залишаємо тільки 2 мокові точки
       setDevices(MOCK_DEVICES);
     } finally {
       setLoading(false);
@@ -272,7 +312,6 @@ export default function MapScreen() {
               coordinate={{ latitude, longitude }}
               onPress={() => handleMarkerPress(device)}
             >
-              {/* ПРОСТИЙ КОЛЬОРОВИЙ КРУГ */}
               <View
                 style={{
                   width: 20,
@@ -411,7 +450,7 @@ export default function MapScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   backgroundColor: `${getAirQualityColor(
-                    selectedDevice.co2_level,
+                    selectedDevice.co2_level
                   )}20`,
                   borderRadius: 8,
                   padding: 12,
@@ -425,7 +464,7 @@ export default function MapScreen() {
                     height: 12,
                     borderRadius: 6,
                     backgroundColor: getAirQualityColor(
-                      selectedDevice.co2_level,
+                      selectedDevice.co2_level
                     ),
                     marginRight: 8,
                   }}
@@ -455,7 +494,6 @@ export default function MapScreen() {
               Показники датчиків
             </Text>
 
-            {/* CO2 */}
             <SensorCard
               icon={Wind}
               label="Вуглекислий газ (CO₂)"
@@ -464,7 +502,6 @@ export default function MapScreen() {
               color={getAirQualityColor(selectedDevice.co2_level)}
             />
 
-            {/* CO */}
             <SensorCard
               icon={AlertCircle}
               label="Чадний газ (CO)"
@@ -473,7 +510,6 @@ export default function MapScreen() {
               color="#FFB84D"
             />
 
-            {/* Температура */}
             <SensorCard
               icon={Thermometer}
               label="Температура"
@@ -482,7 +518,6 @@ export default function MapScreen() {
               color="#8FAEA2"
             />
 
-            {/* Опади: Падає / Не падає дощ */}
             <SensorCard
               icon={Droplets}
               label="Опади"
@@ -496,7 +531,6 @@ export default function MapScreen() {
               color="#6EB5FF"
             />
 
-            {/* Атмосферний тиск */}
             <SensorCard
               icon={Activity}
               label="Атмосферний тиск"
@@ -505,7 +539,6 @@ export default function MapScreen() {
               color="#D6F01F"
             />
 
-            {/* Вологість */}
             <SensorCard
               icon={Droplets}
               label="Вологість"
@@ -514,7 +547,6 @@ export default function MapScreen() {
               color="#8FAEA2"
             />
 
-            {/* Час оновлення */}
             {selectedDevice.recorded_at && (
               <Text
                 style={{
@@ -537,9 +569,7 @@ export default function MapScreen() {
 }
 
 /**
- * ОНОВЛЕНИЙ стиль карти:
- * – дороги м’який зелено-бірюзовий;
- * – великі написи (Львів, райони) світлі, як на прикладі.
+ * Стиль карти: темний фон, мʼякі зелені дороги, світлі великі написи
  */
 const mapStyle = [
   {
@@ -548,26 +578,22 @@ const mapStyle = [
   },
   {
     elementType: "labels.text.fill",
-    stylers: [{ color: "#708a8b" }], // загалом трохи сірі
+    stylers: [{ color: "#708a8b" }],
   },
   {
     elementType: "labels.text.stroke",
     stylers: [{ color: "#050608" }],
   },
-
-  // великі написи – місто / райони
   {
     featureType: "administrative.locality",
     elementType: "labels.text.fill",
-    stylers: [{ color: "#f5f9fa" }], // майже білий
+    stylers: [{ color: "#f5f9fa" }],
   },
   {
     featureType: "administrative.neighborhood",
     elementType: "labels.text.fill",
     stylers: [{ color: "#e2f3f5" }],
   },
-
-  // Дороги – м’який зелено-бірюзовий
   {
     featureType: "road",
     elementType: "geometry",
@@ -608,8 +634,6 @@ const mapStyle = [
     elementType: "geometry",
     stylers: [{ color: "#006743" }],
   },
-
-  // Парки / зелені зони
   {
     featureType: "poi.park",
     elementType: "geometry",
@@ -620,8 +644,6 @@ const mapStyle = [
     elementType: "labels.text.fill",
     stylers: [{ color: "#4caf50" }],
   },
-
-  // Інші POI
   {
     featureType: "poi",
     elementType: "geometry",
@@ -632,8 +654,6 @@ const mapStyle = [
     elementType: "labels.text.fill",
     stylers: [{ color: "#6f7f80" }],
   },
-
-  // Вода
   {
     featureType: "water",
     elementType: "geometry",
@@ -649,8 +669,6 @@ const mapStyle = [
     elementType: "labels.text.stroke",
     stylers: [{ color: "#02151a" }],
   },
-
-  // Транспорт
   {
     featureType: "transit",
     elementType: "geometry",
