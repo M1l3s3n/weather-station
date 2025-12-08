@@ -28,40 +28,7 @@ const LVIV_CENTER = {
   longitudeDelta: 0.05,
 };
 
-// !!! ПІДСТАВ СВОЮ IP-АДРЕСУ (та, що у тебе в браузері для /api/latest)
-const API_URL = "http://192.168.65.58:3000";
-
-// 2 фіктивні станції
-const MOCK_DEVICES = [
-  {
-    id: "mock-1",
-    name: "Тестова станція №1",
-    location: "Площа Ринок",
-    latitude: 49.8419,
-    longitude: 24.0315,
-    co2_level: 450,
-    co_level: 12,
-    temperature: 18.7,
-    precipitation: 0, // не падає дощ
-    humidity: 65,
-    pressure: 1012,
-    recorded_at: "2025-11-19T19:00:00Z",
-  },
-  {
-    id: "mock-2",
-    name: "Тестова станція №2",
-    location: "Франківський район",
-    latitude: 49.8245,
-    longitude: 24.0123,
-    co2_level: 720,
-    co_level: 25,
-    temperature: 20.4,
-    precipitation: 1.2, // падає дощ
-    humidity: 72,
-    pressure: 1005,
-    recorded_at: "2025-11-19T19:05:00Z",
-  },
-];
+const API_URL = "https://weather-station-5qp7.onrender.com";
 
 // Функція для визначення якості повітря на основі CO2
 const getAirQualityColor = (co2Level) => {
@@ -181,8 +148,8 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const fontsLoaded = useAppFonts();
 
-  // 🚨 За замовчуванням показуємо 2 фіктивні станції
-  const [devices, setDevices] = useState(MOCK_DEVICES);
+  // Тепер за замовчуванням немає фіктивних станцій
+  const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -246,15 +213,15 @@ export default function MapScreen() {
       };
 
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        console.warn("Lat/lon from backend invalid, using only MOCK_DEVICES");
-        setDevices(MOCK_DEVICES);
+        console.warn("Lat/lon from backend invalid, devices = []");
+        setDevices([]);
       } else {
-        setDevices([realDevice, ...MOCK_DEVICES]);
+        setDevices([realDevice]);
       }
     } catch (error) {
       console.error("Error fetching devices from backend:", error);
-      // якщо бек не працює – залишаємо тільки 2 мокові точки
-      setDevices(MOCK_DEVICES);
+      // якщо бек не працює – просто залишаємо devices = []
+      setDevices([]);
     } finally {
       setLoading(false);
     }
