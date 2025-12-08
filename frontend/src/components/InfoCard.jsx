@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getAirQuality } from "../utils/airQuality";
 
-export default function InfoCard({ station, onClose }) {
+export default function InfoCard({ station, onClose, sidebarOpen }) {
   if (!station) return null;
 
   const aq = getAirQuality(station.co2);
@@ -64,7 +64,7 @@ export default function InfoCard({ station, onClose }) {
   }, [station.gps?.lat, station.gps?.lon]);
 
   return (
-    <aside className="infoSidebar">
+    <aside className={`infoSidebar ${sidebarOpen ? "open" : ""}`}>
       <button className="close-btn" onClick={onClose} aria-label="Закрити">
         <svg
           width="24"

@@ -4,79 +4,66 @@ import MapCard from "./components/MapCard";
 import InfoCard from "./components/InfoCard";
 import AirQuality from "./components/AirQuality";
 
-const API_BASE = `${window.location.origin}/api`;
+// const API_BASE = `${window.location.origin}/api`;
+const API_BASE = "https://weather-station-5qp7.onrender.com/api";
 
 export default function App() {
-  const [stations, setStations] = useState([]);
-  const [selectedStation, setSelectedStation] = useState(null);
+  const [station, setStation] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchStations = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/latest`);
-        const data = await res.json();
+  const fetchStation = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/latest`);
+      const data = await res.json();
 
-        let stationObject;
+      let stationObject = data?.data || data;
 
-        if (data && data.status === "ok" && data.data) {
-          stationObject = data.data;
-        } else {
-          stationObject = data;
-        }
-
-        if (stationObject && !stationObject._id) {
-          stationObject._id = "main-station";
-        }
-
-        const stationsArray = stationObject ? [stationObject] : [];
-
-        setStations(stationsArray);
-      } catch (err) {
-        console.error("Помилка завантаження:", err);
-        setStations([]);
-      } finally {
-        setLoading(false);
+      if (stationObject && !stationObject._id) {
+        stationObject._id = "main-station";
       }
-    };
 
-    fetchStations();
-    const interval = setInterval(fetchStations, 30000);
+      if (stationObject) {
+        setStation({ ...stationObject });
+      } else {
+        setStation(null);
+      }
+    } catch (err) {
+      console.error("Помилка завантаження:", err);
+      setStation(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStation();
+    const interval = setInterval(fetchStation, 15000);
     return () => clearInterval(interval);
   }, []);
 
-  const handleSelect = (station) => {
-    setSelectedStation(station);
-    setSidebarOpen(true);
-  };
-
-  const selectedPosition = selectedStation
-    ? [selectedStation.gps.lat, selectedStation.gps.lon]
-    : null;
+  const selectedPosition = station ? [station.gps.lat, station.gps.lon] : null;
 
   return (
     <div className="backContainer">
       <header className="header">
         <h1>Екомоніторинг Львова</h1>
-        <h3>{stations.length} активний пристрій</h3>
+        <h3>{station ? "1 активний пристрій" : "0 активних пристроїв"}</h3>
       </header>
 
       <div className="layout">
         <MapCard
-          stations={stations}
-          onSelect={handleSelect}
+          stations={station ? [station] : []}
+          onSelect={() => setSidebarOpen(true)}
           sidebarOpen={sidebarOpen}
           selectedPosition={selectedPosition}
           loading={loading}
         />
-        {sidebarOpen && (
+        {sidebarOpen && station && (
           <InfoCard
-            station={selectedStation}
-            onClose={() => {
-              setSidebarOpen(false);
-              setSelectedStation(null);
-            }}
+            station={station}
+            onClose={() => setSidebarOpen(false)}
+            sidebarOpen={sidebarOpen}
           />
         )}
         <AirQuality />
