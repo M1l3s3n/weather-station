@@ -1,141 +1,86 @@
-import { useEffect, useState } from "react";
-import { analyzeWeather } from "./utils/weatherUtils";
-import WeatherCard from "./components/WeatherCard";
-import PressureCard from "./components/PressureCard";
-import MapCard from "./components/MapCard";
-import useOpenMeteoForecast from "./hooks/useOpenMeteoForecast";
-import HourlyForecast from "./components/HourlyForecast";
-import cloudy from "./assets/icons/cloudy.png";
+import { useState, useEffect } from "react";
 import "./App.css";
+import MapCard from "./components/MapCard";
+import InfoCard from "./components/InfoCard";
+import AirQuality from "./components/AirQuality";
+
+const API_BASE = `${window.location.origin}/api`;
 
 export default function App() {
-  const [data, setData] = useState(null);
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [weather, setWeather] = useState(null);
-  const [pressureData, setPressureData] = useState(null);
-  const [mapData, setMapData] = useState(null);
-  const { forecast, loading: forecastLoading } = useOpenMeteoForecast(
-    mapData?.lat,
-    mapData?.lon
-  );
 
   useEffect(() => {
-    const fetchPressure = async () => {
+    const fetchStations = async () => {
       try {
-        const res = await fetch("http://localhost:3000/api/pressureHourly");
-        if (!res.ok) throw new Error("Помилка підключення тиску");
-        const json = await res.json();
+        const res = await fetch(`${API_BASE}/latest`);
+        const data = await res.json();
 
-        const dataForCard = {
-          pressure: json.data[json.data.length - 1]?.pressure || 0,
-          history: json.data.map((item) => item.pressure),
-        };
+        let stationObject;
 
-        setPressureData(dataForCard);
+        if (data && data.status === "ok" && data.data) {
+          stationObject = data.data;
+        } else {
+          stationObject = data;
+        }
+
+        if (stationObject && !stationObject._id) {
+          stationObject._id = "main-station";
+        }
+
+        const stationsArray = stationObject ? [stationObject] : [];
+
+        setStations(stationsArray);
       } catch (err) {
-        console.error("Помилка при завантаженні тиску:", err);
-        setPressureData(null);
-      }
-    };
-
-    fetchPressure();
-
-    const interval = setInterval(fetchPressure, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch("http://localhost:3000/api/latest"); //! внести в змінну юрл і ендпоінт
-
-        if (!res.ok) throw new Error("Помилка підключення");
-
-        const json = await res.json();
-
-        console.log(json); //!не забути видалити
-
-        setData(json);
-        setMapData({ lat: json.gps.lat, lon: json.gps.lon });
-
-        const weatherData = analyzeWeather(
-          json.temperature,
-          json.humidity,
-          json.rain
-        );
-        setWeather(weatherData);
-
-        setError(null);
-      } catch (err) {
-        console.error("Помилка:", err);
-        setError("Не вдалось підключитись до сервера");
+        console.error("Помилка завантаження:", err);
+        setStations([]);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-
-    const interval = setInterval(fetchData, 60000);
-
+    fetchStations();
+    const interval = setInterval(fetchStations, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  return (
-    <div
-      className="mainContainer"
-      style={{
-        backgroundImage: `url('${weather?.background}')`,
-      }}
-    >
-      <section className="topContainer">
-        <div className="basicInfo">
-          <div className="basicInfoBox">
-            <div className="basicInfoWeather">
-              {loading ? "Завантаження..." : weather?.status}
-            </div>
-            <div className="basicInfoTemperature">
-              {loading ? "..." : data?.temperature}°C
-            </div>
+  const handleSelect = (station) => {
+    setSelectedStation(station);
+    setSidebarOpen(true);
+  };
 
-            <div className="basicInfoDayToday">
-              {loading
-                ? "..."
-                : new Date(data?.createdAt).toLocaleDateString("uk-UA", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                  })}
-            </div>
-          </div>
-        </div>
-        <div className="weatherIcon">
-          {loading ? (
-            <div style={{ fontSize: "8rem" }}>⏳</div>
-          ) : (
-            <img
-              src={weather?.icon}
-              alt={weather?.status}
-              className="weatherIconImage"
-            />
-          )}
-        </div>
-      </section>
-      <section className="cardsContainer">
-        <WeatherCard data={data} loading={loading} />
-        <PressureCard
-          data={pressureData || { pressure: 0, history: [] }}
-          loading={!pressureData}
-        />
+  const selectedPosition = selectedStation
+    ? [selectedStation.gps.lat, selectedStation.gps.lon]
+    : null;
+
+  return (
+    <div className="backContainer">
+      <header className="header">
+        <h1>Екомоніторинг Львова</h1>
+        <h3>{stations.length} активний пристрій</h3>
+      </header>
+
+      <div className="layout">
         <MapCard
-          data={mapData || { lat: 49.84, lon: 24.03 }}
+          stations={stations}
+          onSelect={handleSelect}
+          sidebarOpen={sidebarOpen}
+          selectedPosition={selectedPosition}
           loading={loading}
         />
-        <HourlyForecast data={forecast} loading={forecastLoading} />
-      </section>
+        {sidebarOpen && (
+          <InfoCard
+            station={selectedStation}
+            onClose={() => {
+              setSidebarOpen(false);
+              setSelectedStation(null);
+            }}
+          />
+        )}
+        <AirQuality />
+      </div>
     </div>
   );
 }

@@ -115,62 +115,9 @@ const getStats = async (req, res) => {
   }
 };
 
-const getPressureHourly = async (req, res) => {
-  try {
-    const hours = 8;
-    const now = new Date();
-    const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
-
-    const history = await SensorData.aggregate([
-      { $match: { createdAt: { $gte: startTime } } },
-      {
-        $group: {
-          _id: {
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" },
-            day: { $dayOfMonth: "$createdAt" },
-            hour: { $hour: "$createdAt" },
-          },
-          avgPressure: { $avg: "$pressure" },
-        },
-      },
-      {
-        $sort: {
-          "_id.year": 1,
-          "_id.month": 1,
-          "_id.day": 1,
-          "_id.hour": 1,
-        },
-      },
-    ]);
-
-    const result = history.map((item) => ({
-      timestamp: new Date(
-        item._id.year,
-        item._id.month - 1,
-        item._id.day,
-        item._id.hour,
-        0
-      ),
-      pressure: Number(item.avgPressure.toFixed(2)),
-    }));
-
-    res.json({
-      status: "ok",
-      data: result,
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: "error",
-      message: err.message,
-    });
-  }
-};
-
 module.exports = {
   saveSensorData,
   getLatestData,
   getHistory,
   getStats,
-  getPressureHourly,
 };
